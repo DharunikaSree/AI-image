@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-canvas-light text-charcoal-800 antialiased;
+  font-feature-settings: "cv11", "ss01";
+}
+
+.dark body {
+  @apply bg-canvas-dark text-charcoal-50;
+}
+
+::selection {
+  @apply bg-rose-200 text-charcoal-900;
+}
+
+.skeleton {
+  @apply animate-pulse bg-charcoal-100 dark:bg-charcoal-700 rounded-lg;
+}
+
+.focus-ring {
+  @apply outline-none focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas-light;
+}
+
+.btn-primary {
+  @apply inline-flex items-center justify-center gap-2 rounded-full bg-charcoal-800 px-6 py-3 text-sm font-semibold text-white transition hover:bg-charcoal-700 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none focus-ring;
+}
+
+.btn-secondary {
+  @apply inline-flex items-center justify-center gap-2 rounded-full border border-charcoal-200 bg-white px-6 py-3 text-sm font-semibold text-charcoal-800 transition hover:border-charcoal-400 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none focus-ring dark:bg-charcoal-800 dark:border-charcoal-600 dark:text-white;
+}
+
+.card {
+  @apply rounded-xl2 border border-charcoal-100 bg-white shadow-soft dark:bg-charcoal-800 dark:border-charcoal-700;
+}
+
+.input {
+  @apply w-full rounded-xl border border-charcoal-200 bg-white px-4 py-2.5 text-sm text-charcoal-800 placeholder:text-charcoal-300 focus-ring dark:bg-charcoal-800 dark:border-charcoal-600 dark:text-white;
+}

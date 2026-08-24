@@ -1,0 +1,46 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///./fashion.db
+      - JWT_SECRET=change_this_in_production
+      - AI_MODE=demo
+      - CORS_ORIGINS=http://localhost:5173
+      - UPLOAD_DIR=./uploads
+    volumes:
+      - ./backend:/app
+    command: >
+      sh -c "python ../scripts/seed_database.py && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000/api
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm run dev -- --host
+
+# Optional: swap SQLite for MySQL by uncommenting below and setting
+# DATABASE_URL=mysql+pymysql://fashion:fashion@mysql:3306/fashion_db
+#
+#  mysql:
+#    image: mysql:8
+#    environment:
+#      MYSQL_ROOT_PASSWORD: rootpass
+#      MYSQL_DATABASE: fashion_db
+#      MYSQL_USER: fashion
+#      MYSQL_PASSWORD: fashion
+#    ports:
+#      - "3306:3306"
+#    volumes:
+#      - mysql_data:/var/lib/mysql
+#
+# volumes:
+#   mysql_data:
