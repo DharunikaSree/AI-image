@@ -128,12 +128,41 @@ def _process_crop(
     visual_scores_by_id = {pid: score for pid, score in faiss_matches}
     candidate_pids = list(visual_scores_by_id.keys())
 
+    # Determine related categories (e.g. Shoes <-> Sneakers, Jacket <-> Hoodie/Sweater)
+    p_cat = (primary.category or "").lower()
+    matching_categories = [primary.category]
+    if p_cat in ["shoes", "sneakers"]:
+        matching_categories = ["Shoes", "Sneakers"]
+    elif p_cat in ["jacket", "hoodie", "sweater"]:
+        matching_categories = [primary.category, "Jacket", "Hoodie", "Sweater"]
+    elif p_cat in ["t-shirt", "shirt"]:
+        matching_categories = [primary.category, "Shirt", "T-Shirt"]
+    elif p_cat in ["jeans", "trousers"]:
+        matching_categories = [primary.category, "Jeans", "Trousers"]
+
+    candidates = []
     if candidate_pids:
         candidates = db.query(Product).filter(Product.id.in_(candidate_pids)).all()
-    else:
-        candidates = db.query(Product).filter(Product.category == primary.category).limit(80).all()
-        if not candidates:
-            candidates = db.query(Product).limit(80).all()
+
+    # If FAISS did not retrieve enough products matching the detected category,
+    # enrich the candidate pool with targeted products from the detected category!
+    cat_count = sum(1 for p in candidates if (p.category or "").lower() in [c.lower() for c in matching_categories])
+    if cat_count < 20:
+        existing_ids = {p.id for p in candidates}
+        cat_query = db.query(Product).filter(Product.category.in_(matching_categories))
+        if existing_ids:
+            cat_query = cat_query.filter(~Product.id.in_(existing_ids))
+        if primary.gender_category:
+            g = primary.gender_category.lower()
+            if g in ["men", "boys"]:
+                cat_query = cat_query.filter(Product.name.ilike("%Men%") | Product.name.ilike("%Boys%"))
+            elif g in ["women", "girls"]:
+                cat_query = cat_query.filter(Product.name.ilike("%Women%") | Product.name.ilike("%Girls%"))
+        enriched_candidates = cat_query.limit(60).all()
+        candidates.extend(enriched_candidates)
+
+    if not candidates:
+        candidates = db.query(Product).limit(80).all()
 
     preferences = current_user.preferences
     preferred_styles = [s for s in (preferences.preferred_styles or "").split(",") if s] if preferences else []
@@ -154,15 +183,43 @@ def _process_crop(
             preferred_styles,
             preferred_colors,
             visual_similarity_score=visual_scores_by_id.get(p.id),
+            detected_gender=primary.gender_category,
         )
         for p in candidates
     ]
 
-    best_matches = rank_products(scored_all, "best_match")[:8]
-    affordable_pool = [s for s in scored_all if (s.product.discount_price or s.product.price) <= (effective_budget_max or 999999)]
-    affordable = rank_products(affordable_pool or scored_all, "best_value")[:8]
-    similar_pool = [s for s in scored_all if s.product.category == primary.category]
-    similar_styles = rank_products(similar_pool, "similar_style")[8:16] or rank_products(similar_pool or scored_all, "similar_style")[:8]
+    # Filter out strict gender mismatches if gender is clearly detected
+    if primary.gender_category:
+        g = primary.gender_category.lower()
+        if g in ["men", "boys"]:
+            scored_all = [
+                s for s in scored_all 
+                if not any(w in (s.product.name or "").lower() for w in ["women", "girls", "ladies"])
+            ]
+        elif g in ["women", "girls"]:
+            scored_all = [
+                s for s in scored_all 
+                if not any(w in (s.product.name or "").lower().split() for w in ["men", "boys", "gents"])
+            ]
+
+    # Prioritize matching category pool for best matches
+    matching_cat_pool = [
+        s for s in scored_all 
+        if (s.product.category or "").lower() in [c.lower() for c in matching_categories]
+    ]
+
+    primary_pool = matching_cat_pool if len(matching_cat_pool) >= 4 else scored_all
+
+    if effective_budget_max:
+        budget_filtered_pool = [s for s in primary_pool if (s.product.discount_price or s.product.price) <= effective_budget_max]
+        best_matches = rank_products(budget_filtered_pool or primary_pool, "best_match")[:8]
+        affordable = rank_products(budget_filtered_pool or primary_pool, "best_value")[:8]
+    else:
+        best_matches = rank_products(primary_pool, "best_match")[:8]
+        affordable = rank_products(primary_pool, "best_value")[:8]
+
+    similar_pool = matching_cat_pool if matching_cat_pool else scored_all
+    similar_styles = rank_products(similar_pool, "similar_style")[8:16] or rank_products(similar_pool, "similar_style")[:8]
 
     top_match_product = best_matches[0].product if best_matches else None
     color_variants: list[Product] = []

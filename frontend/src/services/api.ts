@@ -28,7 +28,16 @@ api.interceptors.response.use(
 
 export function apiErrorMessage(error: unknown, fallback = "Something went wrong. Please try again."): string {
   if (axios.isAxiosError(error)) {
-    return error.response?.data?.detail || fallback;
+    const detail = error.response?.data?.detail;
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail) && detail.length > 0) {
+      return detail.map((d: any) => d.msg || d.detail || JSON.stringify(d)).join(", ");
+    }
+    if (error.response?.data?.message) return String(error.response.data.message);
+    if (error.code === "ERR_NETWORK" || !error.response) {
+      return "Network error: Unable to reach backend server. Please ensure backend is running.";
+    }
+    if (error.message) return error.message;
   }
   return fallback;
 }

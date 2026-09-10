@@ -167,6 +167,7 @@ export default function SearchPage() {
 
       const resultPayload = {
         ...res.data,
+        budget_max: budgetMax ? Number(budgetMax) : null,
         query_image_url: serverImageUrl,
         crop_previews: cropPreviews,
       };

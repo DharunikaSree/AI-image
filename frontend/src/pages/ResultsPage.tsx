@@ -1,19 +1,26 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Info, Sparkles, Layers, Tag } from "lucide-react";
+import { Info, Sparkles, Layers, Tag, SlidersHorizontal } from "lucide-react";
 import { api, apiErrorMessage, resolveAssetUrl } from "../services/api";
 import { useToast } from "../context/ToastContext";
 import ProductCard from "../components/ProductCard";
 import { EmptyState, ErrorState } from "../components/States";
 import type { ImageSearchResponse, MultiItemResult, RecommendedProduct } from "../types";
 
-const BUDGET_BUCKETS = [
-  { label: "Under ₹500", max: 500 },
-  { label: "₹500–1,000", max: 1000 },
-  { label: "₹1,000–2,000", max: 2000 },
-  { label: "₹2,000–5,000", max: 5000 },
-  { label: "Any budget", max: null as number | null },
+export interface BudgetBucket {
+  label: string;
+  min: number | null;
+  max: number | null;
+}
+
+const BUDGET_BUCKETS: BudgetBucket[] = [
+  { label: "All Prices", min: null, max: null },
+  { label: "Under ₹500", min: null, max: 500 },
+  { label: "₹500–₹1,000", min: 500, max: 1000 },
+  { label: "₹1,000–₹2,000", min: 1000, max: 2000 },
+  { label: "₹2,000–₹5,000", min: 2000, max: 5000 },
+  { label: "₹5,000+", min: 5000, max: null },
 ];
 
 function ScoreExplanation({ item }: { item: RecommendedProduct }) {
@@ -47,7 +54,7 @@ export default function ResultsPage() {
   const [queryImageUrl, setQueryImageUrl] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
-  const [budgetFilter, setBudgetFilter] = useState<number | null>(null);
+  const [selectedBudget, setSelectedBudget] = useState<BudgetBucket | null>(null);
   const [showExplain, setShowExplain] = useState<number | null>(null);
   const [activeItemIndex, setActiveItemIndex] = useState<number>(0);
   const [activeImageError, setActiveImageError] = useState<boolean>(false);
@@ -67,6 +74,14 @@ export default function ResultsPage() {
         setQueryImageUrl(parsed.query_image_url);
       } else if (cachedImg) {
         setQueryImageUrl(cachedImg);
+      }
+      if (parsed.budget_max) {
+        const matchingBucket = BUDGET_BUCKETS.find((b) => b.max === parsed.budget_max && b.min === null);
+        if (matchingBucket) {
+          setSelectedBudget(matchingBucket);
+        } else {
+          setSelectedBudget({ label: `Under ₹${parsed.budget_max}`, min: null, max: parsed.budget_max });
+        }
       }
     }
 
@@ -135,11 +150,29 @@ export default function ResultsPage() {
   const activeSimilar = currentItem ? currentItem.similar_styles : data?.similar_styles || [];
   const activeVariants = currentItem ? currentItem.color_variants : data?.color_variants || [];
 
+  const filteredBestMatches = useMemo(() => {
+    if (!selectedBudget || (selectedBudget.min === null && selectedBudget.max === null)) {
+      return activeBestMatches;
+    }
+    return activeBestMatches.filter((r) => {
+      const price = r.product.discount_price ?? r.product.price;
+      if (selectedBudget.min !== null && price < selectedBudget.min) return false;
+      if (selectedBudget.max !== null && price > selectedBudget.max) return false;
+      return true;
+    });
+  }, [activeBestMatches, selectedBudget]);
+
   const filteredAffordable = useMemo(() => {
-    if (!activeAffordable) return [];
-    if (budgetFilter == null) return activeAffordable;
-    return activeAffordable.filter((r) => (r.product.discount_price ?? r.product.price) <= budgetFilter!);
-  }, [activeAffordable, budgetFilter]);
+    if (!selectedBudget || (selectedBudget.min === null && selectedBudget.max === null)) {
+      return activeAffordable;
+    }
+    return activeAffordable.filter((r) => {
+      const price = r.product.discount_price ?? r.product.price;
+      if (selectedBudget.min !== null && price < selectedBudget.min) return false;
+      if (selectedBudget.max !== null && price > selectedBudget.max) return false;
+      return true;
+    });
+  }, [activeAffordable, selectedBudget]);
 
   if (error) return <div className="mx-auto max-w-2xl px-6 py-20"><ErrorState message={error} /></div>;
   if (!data || !activeDetected) return <div className="mx-auto max-w-7xl px-6 py-20 text-center text-charcoal-400">Loading results...</div>;
@@ -262,16 +295,51 @@ export default function ResultsPage() {
         </div>
       </motion.div>
 
+      {/* Price / Budget Filter Bar */}
+      <div className="mt-8 rounded-2xl bg-sand-50 p-5 dark:bg-charcoal-800 border border-charcoal-200/60 dark:border-charcoal-700">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-charcoal-700 dark:text-charcoal-200">
+            <SlidersHorizontal size={15} className="text-rose-500" />
+            <span>Filter All Matches by Budget:</span>
+            {selectedBudget && (selectedBudget.min !== null || selectedBudget.max !== null) && (
+              <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-[11px] font-bold text-rose-700 dark:bg-rose-900/50 dark:text-rose-300">
+                {selectedBudget.label}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {BUDGET_BUCKETS.map((b) => {
+              const isSelected = selectedBudget
+                ? selectedBudget.min === b.min && selectedBudget.max === b.max
+                : b.min === null && b.max === null;
+              return (
+                <button
+                  key={b.label}
+                  onClick={() => setSelectedBudget(b.min === null && b.max === null ? null : b)}
+                  className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+                    isSelected
+                      ? "bg-charcoal-900 text-white shadow-sm dark:bg-rose-500 dark:text-white"
+                      : "bg-white text-charcoal-600 hover:bg-sand-100 dark:bg-charcoal-700 dark:text-charcoal-200 dark:hover:bg-charcoal-600"
+                  }`}
+                >
+                  {b.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
       {/* Best matches */}
       <Section
         title={isMultiItem ? `Closest Matches for ${activeDetected.category}` : "Closest Matches"}
-        subtitle="Ranked by visual, category, color and style similarity."
+        subtitle={selectedBudget && (selectedBudget.min !== null || selectedBudget.max !== null) ? `Filtered by ${selectedBudget.label}` : "Ranked by visual, category, color and style similarity."}
       >
-        {activeBestMatches.length === 0 ? (
-          <EmptyState title="No matching styles found." subtitle="Try a clearer photo or a different angle." />
+        {filteredBestMatches.length === 0 ? (
+          <EmptyState title="No matching styles found in this price range." subtitle="Try selecting 'All Prices' or a wider budget range." />
         ) : (
           <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
-            {activeBestMatches.map((r) => (
+            {filteredBestMatches.map((r) => (
               <div key={r.product.id}>
                 <ProductCard
                   product={r.product}
@@ -303,23 +371,8 @@ export default function ResultsPage() {
         title={isMultiItem ? `Affordable ${activeDetected.category} Alternatives` : "Affordable Alternatives"}
         subtitle="Similar looks, ranked by value — not just price."
       >
-        <div className="mb-5 flex flex-wrap gap-2">
-          {BUDGET_BUCKETS.map((b) => (
-            <button
-              key={b.label}
-              onClick={() => setBudgetFilter(b.max)}
-              className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition ${
-                budgetFilter === b.max
-                  ? "border-charcoal-800 bg-charcoal-800 text-white"
-                  : "border-charcoal-200 text-charcoal-600 hover:border-charcoal-400 dark:border-charcoal-600 dark:text-charcoal-200"
-              }`}
-            >
-              {b.label}
-            </button>
-          ))}
-        </div>
         {filteredAffordable.length === 0 ? (
-          <EmptyState title="No options in this budget yet." subtitle="Try a wider budget range." />
+          <EmptyState title="No affordable options in this budget yet." subtitle="Try selecting 'All Prices' or a wider budget range." />
         ) : (
           <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
             {filteredAffordable.map((r, i) => (

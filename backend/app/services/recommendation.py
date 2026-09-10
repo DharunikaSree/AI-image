@@ -56,6 +56,7 @@ def score_product(
     preferred_styles: list[str],
     preferred_colors: list[str],
     visual_similarity_score: float | None = None,
+    detected_gender: str | None = None,
 ) -> ScoredProduct:
     if visual_similarity_score is not None:
         visual = max(0.0, min(1.0, visual_similarity_score))
@@ -63,10 +64,21 @@ def score_product(
         product_embedding = embedding_service.from_string(product.embedding_reference)
         visual = max(0.0, cosine_similarity(query_embedding, product_embedding))
 
-    category_score = 1.0 if product.category.lower() == detected_category.lower() else 0.25
-    color_score = 1.0 if product.color.lower() == detected_color.lower() else 0.3
-    style_score = 1.0 if product.style.lower() == detected_style.lower() else 0.35
-    pattern_score = 1.0 if product.pattern.lower() == detected_pattern.lower() else 0.5
+    p_cat = (product.category or "").lower()
+    d_cat = (detected_category or "").lower()
+    if p_cat == d_cat:
+        category_score = 1.0
+    elif (p_cat in ["shoes", "sneakers"] and d_cat in ["shoes", "sneakers"]) or \
+         (p_cat in ["jacket", "hoodie", "sweater"] and d_cat in ["jacket", "hoodie", "sweater"]) or \
+         (p_cat in ["shirt", "t-shirt"] and d_cat in ["shirt", "t-shirt"]) or \
+         (p_cat in ["trousers", "jeans"] and d_cat in ["trousers", "jeans"]):
+        category_score = 0.85
+    else:
+        category_score = 0.15
+
+    color_score = 1.0 if (product.color or "").lower() == (detected_color or "").lower() else 0.3
+    style_score = 1.0 if (product.style or "").lower() == (detected_style or "").lower() else 0.35
+    pattern_score = 1.0 if (product.pattern or "").lower() == (detected_pattern or "").lower() else 0.5
     budget = _budget_score(product.discount_price or product.price, budget_min, budget_max)
 
     preference_hits = 0
@@ -81,8 +93,26 @@ def score_product(
             preference_hits += 1
     preference_score = (preference_hits / preference_total) if preference_total else 0.5
 
+    # Gender compatibility factor
+    gender_factor = 1.0
+    if detected_gender:
+        g = detected_gender.strip().lower()
+        p_name = (product.name or "").lower()
+        p_desc = (product.description or "").lower()
+        if g in ["men", "boys"]:
+            if "women" in p_name or "women" in p_desc or "girls" in p_name or "ladies" in p_name:
+                gender_factor = 0.3  # heavy penalty against showing women's dresses/shoes for men's searches
+            elif "men" in p_name or "boys" in p_name or "gents" in p_name:
+                gender_factor = 1.15
+        elif g in ["women", "girls"]:
+            p_words = p_name.split()
+            if "men" in p_words or "boys" in p_name or "gents" in p_name:
+                gender_factor = 0.3
+            elif "women" in p_name or "girls" in p_name or "ladies" in p_name:
+                gender_factor = 1.15
+
     w = RECOMMENDATION_WEIGHTS
-    overall = (
+    base_overall = (
         visual * w["visual_similarity"]
         + category_score * w["category_match"]
         + color_score * w["color_match"]
@@ -92,9 +122,11 @@ def score_product(
         + preference_score * w["user_preference"]
     )
 
+    overall = min(1.0, base_overall * gender_factor)
+
     reasons = []
-    if category_score >= 1.0:
-        reasons.append("Same clothing category")
+    if category_score >= 0.85:
+        reasons.append("Same clothing category" if category_score == 1.0 else "Matching clothing category")
     if color_score >= 1.0:
         reasons.append("Very similar color")
     if style_score >= 1.0:
@@ -103,6 +135,8 @@ def score_product(
         reasons.append("Strong visual match")
     if budget >= 0.9:
         reasons.append("Within your budget")
+    if gender_factor > 1.0 and detected_gender:
+        reasons.append(f"Tailored for {detected_gender.title()}")
     if preference_hits > 0:
         reasons.append("Matches your saved preferences")
     if not reasons:

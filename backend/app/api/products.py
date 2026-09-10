@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -12,6 +13,7 @@ router = APIRouter(prefix="/api/products", tags=["products"])
 def list_products(
     db: Session = Depends(get_db),
     category: str | None = None,
+    gender: str | None = None,
     color: str | None = None,
     style: str | None = None,
     min_price: float | None = None,
@@ -21,15 +23,24 @@ def list_products(
 ):
     q = db.query(Product)
     if category:
-        q = q.filter(Product.category == category)
+        if category.lower() in ["shoes", "sneakers"]:
+            q = q.filter(Product.category.in_(["Shoes", "Sneakers"]))
+        else:
+            q = q.filter(Product.category == category)
+    if gender:
+        g = gender.strip().lower()
+        if g in ["men", "boys"]:
+            q = q.filter(Product.name.ilike("%Men%") | Product.name.ilike("%Boys%"))
+        elif g in ["women", "girls"]:
+            q = q.filter(Product.name.ilike("%Women%") | Product.name.ilike("%Girls%"))
     if color:
         q = q.filter(Product.color == color)
     if style:
         q = q.filter(Product.style == style)
     if min_price is not None:
-        q = q.filter(Product.price >= min_price)
+        q = q.filter(func.coalesce(Product.discount_price, Product.price) >= min_price)
     if max_price is not None:
-        q = q.filter(Product.price <= max_price)
+        q = q.filter(func.coalesce(Product.discount_price, Product.price) <= max_price)
     return q.offset((page - 1) * page_size).limit(page_size).all()
 
 
