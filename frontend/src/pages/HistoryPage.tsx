@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import { Trash2 } from "lucide-react";
-import { api, apiErrorMessage } from "../services/api";
+import { useNavigate } from "react-router-dom";
+import { Trash2, ExternalLink, Sparkles } from "lucide-react";
+import { api, apiErrorMessage, resolveAssetUrl } from "../services/api";
 import { useToast } from "../context/ToastContext";
 import { EmptyState, ErrorState } from "../components/States";
 import type { SearchHistoryItem } from "../types";
 
 export default function HistoryPage() {
+  const navigate = useNavigate();
   const { push } = useToast();
   const [items, setItems] = useState<SearchHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -18,7 +20,8 @@ export default function HistoryPage() {
 
   useEffect(load, []);
 
-  async function remove(id: number) {
+  async function remove(e: React.MouseEvent, id: number) {
+    e.stopPropagation();
     try {
       await api.delete(`/history/${id}`);
       setItems((it) => it.filter((x) => x.id !== id));
@@ -45,17 +48,39 @@ export default function HistoryPage() {
         ) : (
           <div className="space-y-3">
             {items.map((item) => (
-              <div key={item.id} className="card flex items-center gap-4 p-4">
-                <div className="h-16 w-16 flex-shrink-0 rounded-xl bg-sand-50 dark:bg-charcoal-700" />
+              <div
+                key={item.id}
+                onClick={() => navigate(`/results/${item.id}`)}
+                className="card flex cursor-pointer items-center gap-4 p-4 transition hover:border-charcoal-400 hover:shadow-soft dark:hover:border-charcoal-500"
+              >
+                <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-xl bg-sand-50 dark:bg-charcoal-700 flex items-center justify-center">
+                  {item.image_path ? (
+                    <img
+                      src={resolveAssetUrl(item.image_path)}
+                      alt={item.detected_category}
+                      className="h-full w-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = "none";
+                      }}
+                    />
+                  ) : (
+                    <Sparkles size={20} className="text-charcoal-300" />
+                  )}
+                </div>
                 <div className="flex-1">
-                  <div className="font-semibold text-charcoal-800 dark:text-white">
+                  <div className="font-semibold text-charcoal-800 dark:text-white flex items-center gap-2">
                     {item.detected_category} · {item.detected_color} · {item.detected_style}
+                    <ExternalLink size={13} className="text-charcoal-400 opacity-0 group-hover:opacity-100" />
                   </div>
                   <div className="text-xs text-charcoal-400">
                     {new Date(item.created_at).toLocaleString()} · {item.result_count} results · {item.confidence.toFixed(1)}% confidence
                   </div>
                 </div>
-                <button onClick={() => remove(item.id)} className="rounded-full p-2 text-charcoal-400 hover:bg-rose-50 hover:text-rose-500" aria-label="Delete search">
+                <button
+                  onClick={(e) => remove(e, item.id)}
+                  className="rounded-full p-2 text-charcoal-400 hover:bg-rose-50 hover:text-rose-500 transition"
+                  aria-label="Delete search"
+                >
                   <Trash2 size={16} />
                 </button>
               </div>

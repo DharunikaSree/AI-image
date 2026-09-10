@@ -32,6 +32,9 @@ class Product(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     variants: Mapped[list["ProductVariant"]] = relationship(back_populates="product", cascade="all, delete-orphan")
+    external_links: Mapped[list["ProductExternalLink"]] = relationship(
+        back_populates="product", cascade="all, delete-orphan", lazy="selectin"
+    )
 
 
 class ProductVariant(Base):
@@ -46,8 +49,34 @@ class ProductVariant(Base):
     product: Mapped["Product"] = relationship(back_populates="variants")
 
 
+class ProductExternalLink(Base):
+    """External e-commerce store link associated with a real product."""
+    __tablename__ = "product_external_links"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True, nullable=False)
+    store_name: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    external_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    verification_status: Mapped[str] = mapped_column(String(30), default="unverified", index=True)
+    last_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    availability_status: Mapped[str] = mapped_column(String(30), default="unknown")
+    price_on_store: Mapped[float | None] = mapped_column(Float, nullable=True)
+    currency: Mapped[str] = mapped_column(String(10), default="INR")
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
+    destination_type: Mapped[str] = mapped_column(String(30), default="exact_product")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    product: Mapped["Product"] = relationship(back_populates="external_links")
+
+
+# Backward-compatible alias
+ProductLink = ProductExternalLink
+
+
 class Category(Base):
     __tablename__ = "categories"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(60), unique=True)
+

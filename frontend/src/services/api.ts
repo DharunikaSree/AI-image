@@ -33,9 +33,14 @@ export function apiErrorMessage(error: unknown, fallback = "Something went wrong
   return fallback;
 }
 
-export function resolveAssetUrl(path: string): string {
+export function resolveAssetUrl(path: string | null | undefined): string {
   if (!path) return "";
-  if (path.startsWith("http")) return path;
+  const trimmed = path.trim();
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("blob:") || trimmed.startsWith("data:")) {
+    return trimmed;
+  }
   const origin = API_BASE_URL.replace(/\/api\/?$/, "");
-  return `${origin}${path}`;
+  // Normalize Windows backslashes (\) to forward slashes (/) and ensure single leading slash
+  const normalized = trimmed.replace(/\\/g, "/").replace(/^\.?\/?/, "/");
+  return `${origin}${normalized}`;
 }

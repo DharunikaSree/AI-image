@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { LogIn } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
@@ -8,6 +8,7 @@ export default function LoginPage() {
   const { login } = useAuth();
   const { push } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -20,7 +21,8 @@ export default function LoginPage() {
     try {
       await login(email, password);
       push("Welcome back!", "success");
-      navigate("/search");
+      const pendingFile = location.state?.pendingFile;
+      navigate("/search", { state: { initialFile: pendingFile } });
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -52,8 +54,24 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <div className="mt-5 rounded-xl bg-sand-50 p-3 text-xs text-charcoal-500 dark:bg-charcoal-700 dark:text-charcoal-300">
-          Demo account: <strong>demo@fashionai.dev</strong> / <strong>demo1234</strong>
+        <div className="mt-5 rounded-xl bg-sand-50 p-3.5 text-xs text-charcoal-600 dark:bg-charcoal-700 dark:text-charcoal-300">
+          <div className="font-semibold text-charcoal-800 dark:text-white mb-1.5">Quick Test Accounts:</div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => { setEmail("demo@fashionai.dev"); setPassword("demo1234"); }}
+              className="rounded-lg bg-white px-2.5 py-1 text-xs font-medium text-charcoal-800 shadow-sm transition hover:bg-rose-50 hover:text-rose-600 dark:bg-charcoal-800 dark:text-charcoal-200"
+            >
+              Demo User (demo@fashionai.dev)
+            </button>
+            <button
+              type="button"
+              onClick={() => { setEmail("admin@fashionai.dev"); setPassword("admin1234"); }}
+              className="rounded-lg bg-white px-2.5 py-1 text-xs font-medium text-charcoal-800 shadow-sm transition hover:bg-rose-50 hover:text-rose-600 dark:bg-charcoal-800 dark:text-charcoal-200"
+            >
+              Admin (admin@fashionai.dev)
+            </button>
+          </div>
         </div>
 
         <p className="mt-6 text-center text-sm text-charcoal-400">

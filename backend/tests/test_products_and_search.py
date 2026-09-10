@@ -49,7 +49,7 @@ def test_image_search_accepts_valid_image_and_returns_detected_attributes(client
     )
     assert res.status_code == 200
     body = res.json()
-    assert body["ai_mode"] == "demo"
+    assert body["ai_mode"] in ("demo", "model")
     assert len(body["detected_items"]) == 1
     assert body["detected_items"][0]["category"]
     assert body["detected_items"][0]["confidence"] > 0
@@ -76,3 +76,56 @@ def test_demo_classifier_is_deterministic():
     assert first[0].category == second[0].category
     assert first[0].color == second[0].color
     assert first[0].confidence == second[0].confidence
+
+
+def test_product_detail_returns_external_links_schema(client, auth_headers):
+    """Verifies that Product Details API returns external_links list and backward-compatible fields."""
+    from app.core.database import SessionLocal
+    from app.models.product import Product, ProductExternalLink
+
+    db = SessionLocal()
+    try:
+        p = Product(
+            name="Test Silk Shirt",
+            brand="Heritage Loom",
+            category="Shirt",
+            price=1999.0,
+            image_url="/uploads/test.jpg",
+            product_url="",
+            platform="DeepFashion",
+        )
+        db.add(p)
+        db.commit()
+        db.refresh(p)
+
+        # 1. Test when no external links exist -> returns external_links: []
+        res = client.get(f"/api/products/{p.id}")
+        assert res.status_code == 200
+        data = res.json()
+        assert "external_links" in data
+        assert data["external_links"] == []
+        assert data["product_url"] == ""
+
+        # 2. Add verified external link
+        link = ProductExternalLink(
+            product_id=p.id,
+            store_name="Myntra",
+            external_url="https://www.myntra.com/shirts/heritage-loom/1",
+            verification_status="verified",
+            availability_status="in_stock",
+        )
+        db.add(link)
+        db.commit()
+
+        res = client.get(f"/api/products/{p.id}")
+        assert res.status_code == 200
+        data = res.json()
+        assert len(data["external_links"]) == 1
+        link_data = data["external_links"][0]
+        assert link_data["store_name"] == "Myntra"
+        assert link_data["url"] == "https://www.myntra.com/shirts/heritage-loom/1"
+        assert link_data["verification_status"] == "verified"
+        assert link_data["availability_status"] == "available"
+    finally:
+        db.close()
+

@@ -8,7 +8,7 @@ services:
     environment:
       - DATABASE_URL=sqlite:///./fashion.db
       - JWT_SECRET=change_this_in_production
-      - AI_MODE=demo
+      - AI_MODE=model
       - CORS_ORIGINS=http://localhost:5173
       - UPLOAD_DIR=./uploads
     volumes:

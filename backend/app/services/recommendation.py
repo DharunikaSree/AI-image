@@ -55,9 +55,13 @@ def score_product(
     budget_max: float | None,
     preferred_styles: list[str],
     preferred_colors: list[str],
+    visual_similarity_score: float | None = None,
 ) -> ScoredProduct:
-    product_embedding = embedding_service.from_string(product.embedding_reference)
-    visual = max(0.0, cosine_similarity(query_embedding, product_embedding))
+    if visual_similarity_score is not None:
+        visual = max(0.0, min(1.0, visual_similarity_score))
+    else:
+        product_embedding = embedding_service.from_string(product.embedding_reference)
+        visual = max(0.0, cosine_similarity(query_embedding, product_embedding))
 
     category_score = 1.0 if product.category.lower() == detected_category.lower() else 0.25
     color_score = 1.0 if product.color.lower() == detected_color.lower() else 0.3

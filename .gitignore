@@ -9,6 +9,7 @@ venv/
 node_modules/
 dist/
 .vite/
+*.tsbuildinfo
 
 # Env
 .env
@@ -17,6 +18,16 @@ dist/
 # Uploads (user content)
 backend/uploads/*
 !backend/uploads/.gitkeep
+
+# Large data & weights (exceeds GitHub 100MB limit)
+data/
+models/
+*.pt
+*.bin
+*.faiss
+*.npy
+*.sqlite
+*.log
 
 # OS
 .DS_Store

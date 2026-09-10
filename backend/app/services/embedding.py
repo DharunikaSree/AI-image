@@ -1,61 +1,157 @@
 """
-Visual embedding + similarity search abstraction.
-
-generate_embedding() turns an image into a fixed-length numeric vector
-(color histogram in HSV space + coarse texture signature). This is a real,
-deterministic feature extraction — not a placeholder. It is intentionally
-lightweight (no GPU/model download required) so the project runs anywhere,
-while the interface below is exactly what you'd swap a real CNN embedding
-model into later (see EmbeddingService docstring).
-
-Embeddings are stored as comma-separated floats on Product.embedding_reference
-so the project needs no external vector database to run out of the box.
+Visual embedding + FAISS similarity search service.
+Generates 512-dimensional normalized embeddings using pretrained CLIP (openai/clip-vit-base-patch32)
+and performs sub-millisecond similarity queries over the DeepFashion FAISS index.
 """
 from __future__ import annotations
 
-import numpy as np
-from PIL import Image
+import os
+import json
+import time
+from pathlib import Path
+from typing import List, Tuple, Dict, Any
 
-EMBEDDING_DIM = 32  # 24 HSV histogram bins + 8 texture bins
+import numpy as np
+import faiss
+import torch
+from PIL import Image
+from transformers import CLIPProcessor, CLIPModel
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+DATA_DIR = PROJECT_ROOT / "data"
+FAISS_INDEX_PATH = DATA_DIR / "clip_faiss.index"
+PRODUCT_IDS_PATH = DATA_DIR / "clip_product_ids.json"
+
+MODEL_NAME = "openai/clip-vit-base-patch32"
+EMBEDDING_DIM = 512
 
 
 class EmbeddingService:
-    """
-    Swap point for a real model: replace the body of `generate_embedding`
-    with e.g. a PyTorch EfficientNet forward pass that returns a fixed-length
-    vector. Every caller (search, admin embedding generation, seeding) goes
-    through this single class, so nothing else needs to change.
-    """
+    """Singleton service for CLIP visual feature extraction and FAISS similarity retrieval."""
+
+    def __init__(self):
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = None
+        self.processor = None
+        self.faiss_index = None
+        self.product_ids: list[int] = []
+        self.loaded = False
+
+    def load(self):
+        if self.loaded:
+            return
+
+        print(f"[*] Initializing CLIP & FAISS Search Service (Device: {self.device})...")
+        try:
+            # 1. Load CLIP Model & Processor
+            self.model = CLIPModel.from_pretrained(MODEL_NAME).to(self.device)
+            self.model.eval()
+            self.processor = CLIPProcessor.from_pretrained(MODEL_NAME)
+
+            # 2. Load FAISS index
+            if FAISS_INDEX_PATH.exists():
+                self.faiss_index = faiss.read_index(str(FAISS_INDEX_PATH))
+                print(f"    Loaded FAISS index: {self.faiss_index.ntotal} vectors (dim={self.faiss_index.d})")
+            else:
+                print(f"[!] FAISS index not found at {FAISS_INDEX_PATH}")
+
+            # 3. Load product IDs
+            if PRODUCT_IDS_PATH.exists():
+                with open(PRODUCT_IDS_PATH, "r", encoding="utf-8") as f:
+                    self.product_ids = json.load(f)
+                print(f"    Loaded {len(self.product_ids)} synchronized product IDs")
+
+            self.loaded = True
+            print("[*] CLIP + FAISS Search Engine is ready.")
+        except Exception as e:
+            print(f"[!] Error loading CLIP / FAISS: {e}")
+            self.loaded = False
+
+    def warmup(self):
+        """Pre-warms the CLIP vision model and tests FAISS query."""
+        self.load()
+        if not self.loaded or self.model is None:
+            return
+        try:
+            dummy_pixels = torch.zeros((1, 3, 224, 224), dtype=torch.float32, device=self.device)
+            with torch.no_grad():
+                outputs = self.model.get_image_features(pixel_values=dummy_pixels)
+                embeds = outputs.pooler_output if hasattr(outputs, "pooler_output") else outputs
+                _ = embeds / embeds.norm(p=2, dim=-1, keepdim=True)
+            if self.faiss_index is not None:
+                dummy_vec = np.zeros((1, EMBEDDING_DIM), dtype=np.float32)
+                self.faiss_index.search(dummy_vec, 1)
+        except Exception as e:
+            print(f"[!] Embedding service warmup warning: {e}")
 
     def generate_embedding(self, image_path: str) -> np.ndarray:
-        img = Image.open(image_path).convert("RGB").resize((128, 128))
-        hsv = np.asarray(img.convert("HSV"), dtype=float)
+        """Extract a 512-dim L2-normalized CLIP embedding from an image file."""
+        self.load()
+        if not self.loaded or self.model is None:
+            # Fallback to 512-dim zeros if model failed
+            return np.zeros(EMBEDDING_DIM, dtype=np.float32)
 
-        h_hist, _ = np.histogram(hsv[:, :, 0], bins=12, range=(0, 255))
-        s_hist, _ = np.histogram(hsv[:, :, 1], bins=8, range=(0, 255))
-        v_hist, _ = np.histogram(hsv[:, :, 2], bins=4, range=(0, 255))
+        try:
+            img = Image.open(image_path).convert("RGB")
+            inputs = self.processor(images=img, return_tensors="pt")
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
-        gray = np.asarray(img.convert("L"), dtype=float)
-        gx = np.abs(np.diff(gray, axis=1)).flatten()
-        tex_hist, _ = np.histogram(gx, bins=8, range=(0, 255))
+            with torch.no_grad():
+                outputs = self.model.get_image_features(**inputs)
+                embeds = outputs.pooler_output if hasattr(outputs, "pooler_output") else outputs
+                embeds = embeds / embeds.norm(p=2, dim=-1, keepdim=True)
+                vec = embeds.cpu().numpy().astype(np.float32)[0]
+            return vec
+        except Exception as e:
+            print(f"[!] CLIP embedding extraction failed: {e}")
+            return np.zeros(EMBEDDING_DIM, dtype=np.float32)
 
-        vec = np.concatenate([h_hist, s_hist, v_hist, tex_hist]).astype(float)
-        norm = np.linalg.norm(vec)
-        return vec / norm if norm > 0 else vec
+    def search_faiss(self, query_vec: np.ndarray, top_k: int = 60) -> List[Tuple[int, float]]:
+        """
+        Queries the FAISS index with the normalized 512-dim query vector.
+        Returns a list of (product_id, similarity_score) tuples.
+        """
+        self.load()
+        if self.faiss_index is None or not self.product_ids:
+            return []
+
+        try:
+            if query_vec.ndim == 1:
+                query_vec = np.expand_dims(query_vec, axis=0)
+
+            if query_vec.dtype != np.float32:
+                query_vec = query_vec.astype(np.float32)
+
+            scores, indices = self.faiss_index.search(query_vec, top_k)
+
+            results: List[Tuple[int, float]] = []
+            for score, idx in zip(scores[0], indices[0]):
+                if idx < 0 or idx >= len(self.product_ids):
+                    continue
+                pid = self.product_ids[idx]
+                results.append((pid, float(score)))
+
+            return results
+        except Exception as e:
+            print(f"[!] FAISS search error: {e}")
+            return []
 
     def to_string(self, vec: np.ndarray) -> str:
         return ",".join(f"{x:.6f}" for x in vec)
 
     def from_string(self, s: str) -> np.ndarray:
         if not s:
-            return np.zeros(EMBEDDING_DIM)
-        return np.array([float(x) for x in s.split(",")])
+            return np.zeros(EMBEDDING_DIM, dtype=np.float32)
+        try:
+            return np.array([float(x) for x in s.split(",")], dtype=np.float32)
+        except Exception:
+            return np.zeros(EMBEDDING_DIM, dtype=np.float32)
 
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     if a.size == 0 or b.size == 0:
         return 0.0
-    denom = (np.linalg.norm(a) * np.linalg.norm(b))
+    denom = np.linalg.norm(a) * np.linalg.norm(b)
     if denom == 0:
         return 0.0
     return float(np.dot(a, b) / denom)

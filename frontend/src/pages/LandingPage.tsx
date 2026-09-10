@@ -27,8 +27,11 @@ export default function LandingPage() {
 
   function goToSearchWithFile(file: File | null) {
     if (!file) return;
-    sessionStorage.setItem("pending_upload_name", file.name);
-    navigate(user ? "/search" : "/login", { state: { pendingUploadHint: true } });
+    if (user) {
+      navigate("/search", { state: { initialFile: file } });
+    } else {
+      navigate("/login", { state: { pendingFile: file } });
+    }
   }
 
   return (

@@ -29,20 +29,61 @@ class ScoreBreakdown(BaseModel):
     reasons: list[str]
 
 
+class ShoppingDestinationResponse(BaseModel):
+    store_name: str
+    store_url: str
+    store_available: bool
+    destination_type: str  # "exact_product" | "official_store" | "shopping_search" | "fallback_search"
+    store_cta: str         # "Shop Now" | "Shop Brand" | "Find Similar Products" | "Search Online"
+    is_exact_match: bool = False
+    query_terms: str = ""
+
+
 class RecommendedProduct(BaseModel):
     product: ProductResponse
     scores: ScoreBreakdown
+    store_name: str | None = None
+    store_url: str | None = None
+    store_available: bool = False
+    destination_type: str = "fallback_search"
+    store_cta: str = "Search Online"
+    shopping_destination: ShoppingDestinationResponse | None = None
+
+
+
+class MultiItemResult(BaseModel):
+    item_id: int
+    crop_filename: str
+    crop_preview_url: str | None = None
+    detected_attributes: DetectedAttributes
+    best_matches: list[RecommendedProduct]
+    affordable_alternatives: list[RecommendedProduct]
+    similar_styles: list[RecommendedProduct]
+    color_variants: list[ProductResponse]
 
 
 class ImageSearchResponse(BaseModel):
     search_id: int
     ai_mode: str
+    image_path: str | None = None
+    query_image_url: str | None = None
     detected_items: list[DetectedAttributes]
     best_matches: list[RecommendedProduct]
     affordable_alternatives: list[RecommendedProduct]
     similar_styles: list[RecommendedProduct]
     color_variants: list[ProductResponse]
     outfit: list[RecommendedProduct] | None = None
+    outfit_total_price: float | None = None
+    items: list[MultiItemResult] | None = None
+
+
+class MultiItemSearchResponse(BaseModel):
+    search_id: int
+    ai_mode: str
+    image_path: str | None = None
+    query_image_url: str | None = None
+    total_items: int
+    items: list[MultiItemResult]
     outfit_total_price: float | None = None
 
 

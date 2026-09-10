@@ -116,7 +116,7 @@ def run():
                         discount_price=float(discount) if discount else None,
                         currency="INR",
                         image_url=f"/uploads/products/{filename}",
-                        product_url=f"https://demo-store.example.com/product/{group}-{color.lower()}",
+                        product_url="",
                         platform="Demo Store",
                         availability=True,
                         embedding_reference=embedding_service.to_string(vec),
