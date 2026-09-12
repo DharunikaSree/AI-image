@@ -1,0 +1,64 @@
+# Git and IDE
+.git
+.github
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Python virtual environment and caches
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+backend/.pytest_cache/
+
+# Frontend (Frontend is deployed on Vercel)
+frontend/
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# Secrets and environment files
+.env
+.env.*
+backend/.env
+backend/.env.*
+
+# Documentation
+docs/
+backend/docs/
+
+# User query uploads (created dynamically at runtime)
+backend/uploads/*
+!backend/uploads/.gitkeep
+uploads/
+
+# Large high-res image datasets & offline training checkpoints
+data/fashion-dataset/
+data/images/
+data/checkpoints/
+/fashion.db
+*.zip
+*.tar.gz
+
+# Base ViT model weights (pre-cached directly in Dockerfile from Hugging Face Hub)
+models/vit_fashion_classifier/model.safetensors
+
+# Explicitly ensure required AI models and catalog database are never ignored
+!models/
+!models/**
+!data/clip_faiss.index
+!data/clip_product_ids.json
+!data/clip_embeddings.npy
+!data/deepfashion_catalog.csv
+!data/deepfashion_metadata.json
+!data/deepfashion_summary.json
+!backend/fashion.db
+
+

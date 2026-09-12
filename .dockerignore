@@ -1,0 +1,65 @@
+# Git and version control
+.git
+.gitignore
+.github
+
+# Python environment and caches
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+backend/.pytest_cache/
+
+# Frontend and Node build artifacts (Frontend is deployed on Vercel)
+frontend/
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# Secrets and local environment files
+.env
+.env.*
+backend/.env
+backend/.env.*
+!.env.example
+!backend/.env.example
+
+# OS metadata
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Documentation and temporary scratch files
+docs/
+backend/docs/
+
+# Large high-res image datasets (should NOT be baked into the image build context; mount as volume if needed)
+data/fashion-dataset/
+data/images/
+data/checkpoints/
+/fashion.db
+*.zip
+*.tar.gz
+
+# Exclude redundant base ViT model (pre-cached directly in Dockerfile via Hugging Face Hub)
+models/**/*.safetensors
+
+# Explicitly ensure required AI models and catalog database are never ignored
+!models/
+!models/**
+!data/clip_faiss.index
+!data/clip_product_ids.json
+!data/clip_embeddings.npy
+!data/deepfashion_catalog.csv
+!data/deepfashion_metadata.json
+!data/deepfashion_summary.json
+!backend/fashion.db
+
+
+

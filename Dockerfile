@@ -14,12 +14,10 @@ COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir -r /app/backend/requirements.txt
 
-# Pre-cache Hugging Face transformer models (CLIP & ViT base) for zero runtime startup latency
-RUN python -c "from transformers import CLIPModel, CLIPProcessor, AutoImageProcessor, ViTModel; \
-    CLIPModel.from_pretrained('openai/clip-vit-base-patch32'); \
-    CLIPProcessor.from_pretrained('openai/clip-vit-base-patch32'); \
-    AutoImageProcessor.from_pretrained('google/vit-base-patch16-224'); \
-    ViTModel.from_pretrained('google/vit-base-patch16-224')"
+# Pre-cache Hugging Face transformer models (CLIP & ViT base) using memory-safe stream download
+RUN python -c "from huggingface_hub import snapshot_download; \
+    snapshot_download('openai/clip-vit-base-patch32'); \
+    snapshot_download('google/vit-base-patch16-224')"
 
 # Copy application code, trained AI models, and FAISS vector index from repository root
 COPY backend/ /app/backend/
@@ -46,5 +44,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:${PORT:-8000}/api/health || exit 1
 
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
-
 
