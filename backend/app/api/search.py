@@ -23,6 +23,7 @@ from app.schemas.search import (
     MultiItemSearchResponse,
     RecommendedProduct,
     ScoreBreakdown,
+    SearchHistoryDetailResponse,
     SearchHistoryItem,
 )
 from app.services.ai_classifier import classify_image
@@ -434,12 +435,189 @@ async def search_multi_item(
     )
 
 
-@router.get("/{search_id}", response_model=SearchHistoryItem)
+def _rehydrate_search_response(search: SearchHistory, db: Session) -> SearchHistoryDetailResponse:
+    recs = db.query(Recommendation).filter(Recommendation.search_id == search.id).all()
+    results = db.query(SearchResult).filter(SearchResult.search_id == search.id).order_by(SearchResult.rank.asc()).all()
+
+    rec_pids = [r.product_id for r in recs]
+    res_pids = [r.product_id for r in results]
+    all_pids = list(dict.fromkeys(rec_pids + res_pids))
+
+    products_by_id: dict[int, Product] = {}
+    if all_pids:
+        products = db.query(Product).filter(Product.id.in_(all_pids)).all()
+        products_by_id = {p.id: p for p in products}
+
+    best_matches: list[RecommendedProduct] = []
+    if recs:
+        for r in recs:
+            if r.mode == "best_match" and r.product_id in products_by_id:
+                p = products_by_id[r.product_id]
+                prod_resp = ProductResponse.model_validate(p)
+                dest = destination_resolver.resolve(prod_resp)
+                try:
+                    reasons = json.loads(r.reasons) if r.reasons else ["Visual match"]
+                except Exception:
+                    reasons = ["Visual match"]
+                best_matches.append(
+                    RecommendedProduct(
+                        product=prod_resp,
+                        scores=ScoreBreakdown(
+                            visual_score=r.visual_score,
+                            category_score=r.category_score,
+                            color_score=r.color_score,
+                            style_score=r.style_score,
+                            pattern_score=r.pattern_score,
+                            budget_score=r.budget_score,
+                            preference_score=r.preference_score,
+                            overall_score=r.overall_score,
+                            reasons=reasons,
+                        ),
+                        store_name=dest.store_name,
+                        store_url=dest.store_url,
+                        store_available=dest.store_available,
+                        destination_type=dest.destination_type,
+                        store_cta=dest.store_cta,
+                    )
+                )
+
+    if not best_matches and results:
+        for sr in results:
+            if sr.product_id in products_by_id:
+                p = products_by_id[sr.product_id]
+                prod_resp = ProductResponse.model_validate(p)
+                dest = destination_resolver.resolve(prod_resp)
+                best_matches.append(
+                    RecommendedProduct(
+                        product=prod_resp,
+                        scores=ScoreBreakdown(
+                            visual_score=sr.similarity_score,
+                            overall_score=sr.overall_score,
+                            reasons=["Visual match"],
+                        ),
+                        store_name=dest.store_name,
+                        store_url=dest.store_url,
+                        store_available=dest.store_available,
+                        destination_type=dest.destination_type,
+                        store_cta=dest.store_cta,
+                    )
+                )
+
+    target_category = search.detected_category or ""
+    cat_query = db.query(Product)
+    if target_category and not target_category.startswith("Outfit"):
+        cat_query = cat_query.filter(Product.category.ilike(f"%{target_category}%"))
+
+    cat_products = cat_query.filter(~Product.id.in_(all_pids) if all_pids else True).limit(40).all()
+    if not cat_products and all_pids:
+        cat_products = db.query(Product).filter(~Product.id.in_(all_pids)).limit(40).all()
+
+    sorted_by_price = sorted(cat_products, key=lambda p: (p.discount_price or p.price))
+    affordable_alternatives: list[RecommendedProduct] = []
+    for p in sorted_by_price[:8]:
+        prod_resp = ProductResponse.model_validate(p)
+        dest = destination_resolver.resolve(prod_resp)
+        affordable_alternatives.append(
+            RecommendedProduct(
+                product=prod_resp,
+                scores=ScoreBreakdown(
+                    visual_score=75.0,
+                    overall_score=80.0,
+                    reasons=["Affordable alternative in budget"],
+                ),
+                store_name=dest.store_name,
+                store_url=dest.store_url,
+                store_available=dest.store_available,
+                destination_type=dest.destination_type,
+                store_cta=dest.store_cta,
+            )
+        )
+
+    similar_styles: list[RecommendedProduct] = []
+    for p in cat_products[:8]:
+        prod_resp = ProductResponse.model_validate(p)
+        dest = destination_resolver.resolve(prod_resp)
+        similar_styles.append(
+            RecommendedProduct(
+                product=prod_resp,
+                scores=ScoreBreakdown(
+                    visual_score=70.0,
+                    overall_score=75.0,
+                    reasons=["Similar style match"],
+                ),
+                store_name=dest.store_name,
+                store_url=dest.store_url,
+                store_available=dest.store_available,
+                destination_type=dest.destination_type,
+                store_cta=dest.store_cta,
+            )
+        )
+
+    color_variants: list[ProductResponse] = []
+    if best_matches:
+        top_product_id = best_matches[0].product.id
+        top_p = products_by_id.get(top_product_id)
+        if top_p and top_p.group_key:
+            variants = (
+                db.query(Product)
+                .filter(Product.group_key == top_p.group_key, Product.id != top_p.id)
+                .all()
+            )
+            color_variants = [ProductResponse.model_validate(v) for v in variants]
+
+    detected_attr = DetectedAttributes(
+        category=search.detected_category or "Clothing",
+        confidence=search.confidence or 90.0,
+        color=search.detected_color or "",
+        pattern="Solid",
+        style=search.detected_style or "",
+        sleeve_type=None,
+        neckline=None,
+        gender_category=None,
+        season=None,
+    )
+
+    crop_url = f"/{search.image_path}" if search.image_path and not search.image_path.startswith("/") else search.image_path
+
+    primary_item = MultiItemResult(
+        item_id=1,
+        crop_filename=Path(search.image_path.replace("\\", "/")).name if search.image_path else "",
+        crop_preview_url=crop_url,
+        detected_attributes=detected_attr,
+        best_matches=best_matches,
+        affordable_alternatives=affordable_alternatives,
+        similar_styles=similar_styles,
+        color_variants=color_variants,
+    )
+
+    return SearchHistoryDetailResponse(
+        id=search.id,
+        search_id=search.id,
+        ai_mode=settings.AI_MODE,
+        image_path=search.image_path,
+        query_image_url=crop_url,
+        detected_category=search.detected_category,
+        detected_style=search.detected_style,
+        detected_color=search.detected_color,
+        confidence=search.confidence,
+        result_count=search.result_count or len(best_matches),
+        created_at=search.created_at,
+        detected_items=[detected_attr],
+        best_matches=best_matches,
+        affordable_alternatives=affordable_alternatives,
+        similar_styles=similar_styles,
+        color_variants=color_variants,
+        items=[primary_item],
+    )
+
+
+@router.get("/{search_id}", response_model=SearchHistoryDetailResponse)
 def get_search(search_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     search = db.query(SearchHistory).filter(SearchHistory.id == search_id, SearchHistory.user_id == current_user.id).first()
     if not search:
         raise HTTPException(status_code=404, detail="Search not found")
-    return search
+    return _rehydrate_search_response(search, db)
+
 
 
 @router.delete("/{search_id}", status_code=204)
@@ -447,13 +625,29 @@ def delete_search(search_id: int, db: Session = Depends(get_db), current_user: U
     search = db.query(SearchHistory).filter(SearchHistory.id == search_id, SearchHistory.user_id == current_user.id).first()
     if not search:
         raise HTTPException(status_code=404, detail="Search not found")
-    if search.image_path:
-        filename = Path(search.image_path.replace("\\", "/")).name
-        file_to_del = Path(settings.UPLOAD_DIR) / filename
-        if file_to_del.exists():
+
+    file_to_del: Path | None = None
+    image_path_str = search.image_path
+    if image_path_str:
+        upload_dir = Path(settings.UPLOAD_DIR).resolve()
+        filename = Path(image_path_str.replace("\\", "/")).name
+        candidate = (upload_dir / filename).resolve()
+        if candidate.is_relative_to(upload_dir) and candidate.is_file():
+            file_to_del = candidate
+
+    try:
+        db.delete(search)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    if file_to_del:
+        remaining_ref = db.query(SearchHistory).filter(
+            SearchHistory.image_path == image_path_str
+        ).first()
+        if not remaining_ref:
             try:
                 file_to_del.unlink()
             except OSError:
                 pass
-    db.delete(search)
-    db.commit()

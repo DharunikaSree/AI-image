@@ -1,0 +1,5 @@
+Model/Component,Precision,Accuracy,Recall,F1-Score
+Vision Transformer (ViT),90.24% (Macro),90.16% (Top-1),90.22% (Macro),90.05% (Macro)
+CLIP,80.13% (ZS Macro),78.73% (ZS Top-1),87.62% (R@10),78.64% (ZS Macro)
+FAISS Similarity Retrieval,74.70% (P@10),N/A (Retrieval Engine),82.45% (mAP@10),0.8692 (MRR)
+Proposed Recommendation System,97.78% (P@10),N/A (Ranking System),30.47% (R@10),0.9581 (NDCG@10)

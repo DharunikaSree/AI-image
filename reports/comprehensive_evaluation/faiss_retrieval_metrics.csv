@@ -1,0 +1,9 @@
+Metric,Value,Unit,Description
+Precision@5,77.27,%,Percentage of relevant category in top-5 nearest neighbors (excl. self-match)
+Precision@10,74.7,%,Percentage of relevant category in top-10 nearest neighbors (excl. self-match)
+Precision@20,72.7,%,Percentage of relevant category in top-20 nearest neighbors (excl. self-match)
+mAP@10,82.45,%,Mean Average Precision across top-10 retrieved neighbors
+mAP@20,79.77,%,Mean Average Precision across top-20 retrieved neighbors
+MRR,0.8692,score,Mean Reciprocal Rank of first relevant category neighbor
+Search Latency,5.125,ms,Average FAISS search latency on CPU per query
+Throughput,195.1,QPS,Queries Per Second

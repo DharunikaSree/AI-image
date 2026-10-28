@@ -43,22 +43,25 @@ uploads/
 data/fashion-dataset/
 data/images/
 data/checkpoints/
-/fashion.db
 *.zip
 *.tar.gz
 
-# Base ViT model weights (pre-cached directly in Dockerfile from Hugging Face Hub)
-models/vit_fashion_classifier/model.safetensors
+# Offline / intermediate dataset files (NOT needed at runtime; catalog is in backend/fashion.db)
+data/clip_embeddings.npy
+data/deepfashion_metadata.json
+data/deepfashion_catalog.csv
+data/deepfashion_summary.json
+data/*.npy
+data/*.csv
 
-# Explicitly ensure required AI models and catalog database are never ignored
-!models/
-!models/**
-!data/clip_faiss.index
-!data/clip_product_ids.json
-!data/clip_embeddings.npy
-!data/deepfashion_catalog.csv
-!data/deepfashion_metadata.json
-!data/deepfashion_summary.json
+# Large base model weights (pre-cached directly in Dockerfile from Hugging Face Hub)
+models/vit_fashion_classifier/model.safetensors
+models/**/*.safetensors
+*.safetensors
+
+# Root database (if present)
+/fashion.db
 !backend/fashion.db
+
 
 

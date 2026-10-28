@@ -1,0 +1,9 @@
+Metric,Value,Unit,Description
+Precision@5,98.16,%,Percentage of relevant items in top-5 recommendations
+Precision@10,97.78,%,Percentage of relevant items in top-10 recommendations
+Recall@10,30.47,%,Coverage of compatible items in top-10 recommendations
+NDCG@5,0.9053,score,Normalized Discounted Cumulative Gain at rank 5
+NDCG@10,0.9581,score,Normalized Discounted Cumulative Gain at rank 10
+MRR,0.8824,score,Mean Reciprocal Rank of first perfect style-compatible recommendation
+Style Concordance,91.02,%,Concordance with query item's style attribute
+Gender Consistency,99.75,%,Consistency with user query gender profile

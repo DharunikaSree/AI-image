@@ -1,0 +1,10 @@
+Task,Metric,Value,Unit
+Zero-Shot Classification,Top-1 Accuracy,78.73,%
+Zero-Shot Classification,Top-5 Accuracy,99.37,%
+Zero-Shot Classification,Macro Precision,80.13,%
+Zero-Shot Classification,Macro Recall,78.95,%
+Zero-Shot Classification,Macro F1-Score,78.64,%
+Cross-Modal Retrieval,Image-to-Text Recall@1,38.41,%
+Cross-Modal Retrieval,Image-to-Text Recall@5,77.14,%
+Cross-Modal Retrieval,Image-to-Text Recall@10,87.62,%
+Cross-Modal Retrieval,Mean Reciprocal Rank (MRR),0.5488,score

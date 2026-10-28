@@ -32,6 +32,7 @@ class SearchHistory(Base):
 
     user: Mapped["User"] = relationship(back_populates="searches")
     results: Mapped[list["SearchResult"]] = relationship(back_populates="search", cascade="all, delete-orphan")
+    recommendations: Mapped[list["Recommendation"]] = relationship(back_populates="search", cascade="all, delete-orphan")
 
 
 class SearchResult(Base):
@@ -64,3 +65,5 @@ class Recommendation(Base):
     preference_score: Mapped[float] = mapped_column(Float, default=0)
     overall_score: Mapped[float] = mapped_column(Float, default=0)
     reasons: Mapped[str] = mapped_column(Text, default="")  # JSON-encoded list of strings
+
+    search: Mapped["SearchHistory"] = relationship(back_populates="recommendations")

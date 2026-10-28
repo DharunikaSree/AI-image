@@ -64,38 +64,65 @@ export default function ResultsPage() {
   }, [activeItemIndex]);
 
   useEffect(() => {
+    let hasValidCache = false;
     const cached = sessionStorage.getItem(`search_result_${searchId}`);
     const cachedImg = sessionStorage.getItem(`search_image_${searchId}`);
 
     if (cached) {
-      const parsed = JSON.parse(cached);
-      setData(parsed);
-      if (parsed.query_image_url) {
-        setQueryImageUrl(parsed.query_image_url);
-      } else if (cachedImg) {
-        setQueryImageUrl(cachedImg);
-      }
-      if (parsed.budget_max) {
-        const matchingBucket = BUDGET_BUCKETS.find((b) => b.max === parsed.budget_max && b.min === null);
-        if (matchingBucket) {
-          setSelectedBudget(matchingBucket);
-        } else {
-          setSelectedBudget({ label: `Under ₹${parsed.budget_max}`, min: null, max: parsed.budget_max });
+      try {
+        const parsed = JSON.parse(cached);
+        setData(parsed);
+        hasValidCache = true;
+        if (parsed.query_image_url) {
+          setQueryImageUrl(parsed.query_image_url);
+        } else if (cachedImg) {
+          setQueryImageUrl(cachedImg);
         }
+        if (parsed.budget_max) {
+          const matchingBucket = BUDGET_BUCKETS.find((b) => b.max === parsed.budget_max && b.min === null);
+          if (matchingBucket) {
+            setSelectedBudget(matchingBucket);
+          } else {
+            setSelectedBudget({ label: `Under ₹${parsed.budget_max}`, min: null, max: parsed.budget_max });
+          }
+        }
+      } catch {
+        // Stale or corrupted cache in sessionStorage, fallback to backend rehydration
       }
     }
 
-    // Retrieve backend search history to obtain server-persisted image path
+    // Retrieve backend search history and rehydrate full results
     api.get(`/search/${searchId}`)
       .then((res) => {
-        if (res.data?.image_path) {
-          const resolved = resolveAssetUrl(res.data.image_path);
-          setQueryImageUrl(resolved);
+        if (res.data) {
+          const fullData = res.data;
+          setData((prev) => {
+            if (!prev) return fullData;
+            return {
+              ...prev,
+              query_image_url: fullData.image_path
+                ? resolveAssetUrl(fullData.image_path)
+                : (fullData.query_image_url ? resolveAssetUrl(fullData.query_image_url) : prev.query_image_url),
+              best_matches: prev.best_matches && prev.best_matches.length > 0 ? prev.best_matches : fullData.best_matches,
+              affordable_alternatives: prev.affordable_alternatives && prev.affordable_alternatives.length > 0 ? prev.affordable_alternatives : fullData.affordable_alternatives,
+              similar_styles: prev.similar_styles && prev.similar_styles.length > 0 ? prev.similar_styles : fullData.similar_styles,
+              color_variants: prev.color_variants && prev.color_variants.length > 0 ? prev.color_variants : fullData.color_variants,
+              items: prev.items && prev.items.length > 0 ? prev.items : fullData.items,
+            };
+          });
+
+          const resolved = fullData.image_path
+            ? resolveAssetUrl(fullData.image_path)
+            : (fullData.query_image_url ? resolveAssetUrl(fullData.query_image_url) : null);
+          if (resolved) {
+            setQueryImageUrl(resolved);
+          }
+          sessionStorage.setItem(`search_result_${searchId}`, JSON.stringify(fullData));
         }
       })
-      .catch(() => {
-        if (!cached) {
-          setError("Results for this search are no longer available. Try a new search.");
+      .catch((err) => {
+        if (!hasValidCache) {
+          setError(apiErrorMessage(err, "Results for this search are no longer available. Try a new search."));
         }
       });
 

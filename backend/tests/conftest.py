@@ -13,7 +13,15 @@ os.environ["JWT_SECRET"] = "test_secret"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from app.core.database import Base, engine  # noqa: E402
+import app.models  # noqa: F401, E402
 from app.main import app  # noqa: E402
+
+
+@pytest.fixture(autouse=True, scope="session")
+def setup_test_database():
+    """Ensure all database tables exist in the isolated temporary test database."""
+    Base.metadata.create_all(bind=engine)
 
 
 @pytest.fixture()

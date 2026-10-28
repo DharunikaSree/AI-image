@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -14,10 +15,8 @@ from app.services.ai_classifier import vit_classifier
 from app.services.attribute_classifier import attribute_classifier
 from app.services.embedding import embedding_service
 
+logger = logging.getLogger("uvicorn.error")
 settings = get_settings()
-
-Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
-Base.metadata.create_all(bind=engine)
 
 
 @asynccontextmanager
@@ -31,17 +30,17 @@ async def lifespan(app: FastAPI):
         try:
             vit_classifier.warmup()
         except Exception as e:
-            print(f"[!] Warning: ViT classifier preload encountered error: {e}")
+            logger.warning(f"ViT classifier preload encountered error: {e}")
 
     try:
         embedding_service.warmup()
     except Exception as e:
-        print(f"[!] Warning: Embedding service preload encountered error: {e}")
+        logger.warning(f"Embedding service preload encountered error: {e}")
 
     try:
         attribute_classifier.warmup()
     except Exception as e:
-        print(f"[!] Warning: Attribute classifier preload encountered error: {e}")
+        logger.warning(f"Attribute classifier preload encountered error: {e}")
 
     yield
 
@@ -109,7 +108,8 @@ app.include_router(admin.router)
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    # Never leak stack traces to the client.
+    # Log full exception details to server logs without leaking internal stack traces to the client
+    logger.exception(f"Unhandled server error on {request.method} {request.url.path}: {exc}")
     return JSONResponse(status_code=500, content={"detail": "Something went wrong. Please try again."})
 
 

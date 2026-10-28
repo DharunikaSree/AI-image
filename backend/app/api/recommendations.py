@@ -72,7 +72,11 @@ def get_recommendations(
     ]
 
     if mode == "similar_style":
-        similar_pool = [s for s in scored if s.product.category.lower() == search.detected_category.lower()]
+        target_category = (search.detected_category or "").strip().lower()
+        similar_pool = [
+            s for s in scored
+            if target_category and (s.product.category or "").strip().lower() == target_category
+        ]
         ranked = rank_products(similar_pool or scored, "similar_style")[:12]
     elif mode == "best_value":
         affordable_pool = [s for s in scored if (s.product.discount_price or s.product.price) <= (budget_max or 999999)]

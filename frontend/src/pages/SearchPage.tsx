@@ -22,18 +22,121 @@ export default function SearchPage() {
   const location = useLocation();
   const { push } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [crops, setCrops] = useState<GarmentCropItem[]>([]);
   const [isCropModalOpen, setIsCropModalOpen] = useState(false);
 
+  // Camera state
+  const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+  const [cameraLoading, setCameraLoading] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [budgetMax, setBudgetMax] = useState<string>("");
+
+  // Camera stream lifecycle
+  useEffect(() => {
+    if (!isCameraModalOpen) return;
+
+    let active = true;
+    setCameraLoading(true);
+    setCameraError(null);
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setCameraLoading(false);
+      setCameraError("Camera access is not supported by your browser or environment. Please upload an image instead.");
+      return;
+    }
+
+    async function startStream() {
+      try {
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: false,
+          });
+        } catch {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+        }
+
+        if (!active) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+        setCameraLoading(false);
+      } catch (err: any) {
+        if (!active) return;
+        setCameraLoading(false);
+        if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+          setCameraError("Camera permission was denied. Please allow camera access in your browser settings to take a photo.");
+        } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+          setCameraError("No camera device was detected on your system. Please connect a camera or upload an image.");
+        } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
+          setCameraError("Camera is currently in use by another application. Please close other camera apps and try again.");
+        } else {
+          setCameraError(err.message || "Failed to start camera. Please try uploading an image.");
+        }
+      }
+    }
+
+    startStream();
+
+    return () => {
+      active = false;
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+    };
+  }, [isCameraModalOpen]);
+
+  function closeCamera() {
+    setIsCameraModalOpen(false);
+    setCameraError(null);
+    setCameraLoading(false);
+  }
+
+  function handleCapturePhoto() {
+    if (!videoRef.current || videoRef.current.videoWidth === 0) return;
+    const video = videoRef.current;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          const capturedFile = new File([blob], `camera_capture_${Date.now()}.jpg`, { type: "image/jpeg" });
+          closeCamera();
+          validateAndSetFile(capturedFile);
+        }
+      },
+      "image/jpeg",
+      0.95
+    );
+  }
 
   useEffect(() => {
     if (location.state?.initialFile instanceof File) {
@@ -267,7 +370,7 @@ export default function SearchPage() {
                   <button onClick={() => fileInputRef.current?.click()} className="btn-primary">
                     <Upload size={15} /> Upload Image
                   </button>
-                  <button onClick={() => cameraInputRef.current?.click()} className="btn-secondary">
+                  <button onClick={() => setIsCameraModalOpen(true)} className="btn-secondary">
                     <Camera size={15} /> Use Camera
                   </button>
                 </div>
@@ -275,18 +378,6 @@ export default function SearchPage() {
                   ref={fileInputRef}
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
-                  className="hidden"
-                  onChange={(e) => {
-                    const selected = e.target.files?.[0] ?? null;
-                    e.target.value = "";
-                    validateAndSetFile(selected);
-                  }}
-                />
-                <input
-                  ref={cameraInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
                   className="hidden"
                   onChange={(e) => {
                     const selected = e.target.files?.[0] ?? null;
@@ -391,6 +482,89 @@ export default function SearchPage() {
         onClose={() => setIsCropModalOpen(false)}
         onCropComplete={handleCropComplete}
       />
+
+      {/* Live Camera Viewfinder Modal */}
+      <AnimatePresence>
+        {isCameraModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={closeCamera}
+              className="fixed inset-0 bg-charcoal-950/80 backdrop-blur-sm"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative z-10 flex max-h-[92vh] w-full max-w-xl flex-col rounded-3xl bg-white p-6 shadow-2xl dark:bg-charcoal-800 sm:p-8"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between pb-4 border-b border-charcoal-100 dark:border-charcoal-700">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-50 text-rose-500 dark:bg-rose-500/10">
+                    <Camera size={18} />
+                  </span>
+                  <div>
+                    <h2 className="font-display text-xl font-semibold text-charcoal-900 dark:text-white">
+                      Take Outfit Photo
+                    </h2>
+                    <p className="text-xs text-charcoal-500 dark:text-charcoal-400">
+                      Position your garment or outfit in the frame and capture.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={closeCamera}
+                  aria-label="Close camera modal"
+                  className="rounded-full p-2 text-charcoal-400 hover:bg-sand-100 hover:text-charcoal-700 dark:hover:bg-charcoal-700 dark:hover:text-white transition"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Viewport */}
+              <div className="my-5 flex flex-1 items-center justify-center overflow-hidden rounded-2xl bg-charcoal-950 aspect-[4/3] max-h-[55vh] relative">
+                {cameraLoading && (
+                  <div className="flex flex-col items-center gap-2 text-white">
+                    <Loader2 size={32} className="animate-spin text-rose-500" />
+                    <span className="text-xs text-charcoal-300">Starting camera preview...</span>
+                  </div>
+                )}
+                {cameraError ? (
+                  <div className="p-6 text-center text-rose-400">
+                    <p className="text-sm font-medium">{cameraError}</p>
+                  </div>
+                ) : (
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className={`h-full w-full object-cover ${cameraLoading ? "opacity-0" : "opacity-100 transition-opacity duration-300"}`}
+                  />
+                )}
+              </div>
+
+              {/* Footer Actions */}
+              <div className="flex items-center justify-between pt-3 border-t border-charcoal-100 dark:border-charcoal-700">
+                <button onClick={closeCamera} className="btn-secondary">
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCapturePhoto}
+                  disabled={cameraLoading || !!cameraError}
+                  className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Camera size={16} /> Capture Photo
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

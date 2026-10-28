@@ -1,7 +1,9 @@
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.activity import Favorite, SearchHistory
 from app.models.product import Product
@@ -11,6 +13,7 @@ from app.schemas.search import SearchHistoryItem
 from app.schemas.user import PreferencesResponse, PreferencesUpdate
 
 router = APIRouter(prefix="/api", tags=["user"])
+settings = get_settings()
 
 
 # ---------- Favorites ----------
@@ -59,8 +62,32 @@ def delete_history(history_id: int, db: Session = Depends(get_db), current_user:
     item = db.query(SearchHistory).filter(SearchHistory.id == history_id, SearchHistory.user_id == current_user.id).first()
     if not item:
         raise HTTPException(status_code=404, detail="History item not found")
-    db.delete(item)
-    db.commit()
+
+    file_to_del: Path | None = None
+    image_path_str = item.image_path
+    if image_path_str:
+        upload_dir = Path(settings.UPLOAD_DIR).resolve()
+        filename = Path(image_path_str.replace("\\", "/")).name
+        candidate = (upload_dir / filename).resolve()
+        if candidate.is_relative_to(upload_dir) and candidate.is_file():
+            file_to_del = candidate
+
+    try:
+        db.delete(item)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    if file_to_del:
+        remaining_ref = db.query(SearchHistory).filter(
+            SearchHistory.image_path == image_path_str
+        ).first()
+        if not remaining_ref:
+            try:
+                file_to_del.unlink()
+            except OSError:
+                pass
 
 
 # ---------- Profile / Preferences ----------

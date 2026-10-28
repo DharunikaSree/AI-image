@@ -18,15 +18,16 @@ class DetectedAttributes(BaseModel):
 
 
 class ScoreBreakdown(BaseModel):
-    visual_score: float
-    category_score: float
-    color_score: float
-    style_score: float
-    pattern_score: float
-    budget_score: float
-    preference_score: float
-    overall_score: float
-    reasons: list[str]
+    visual_score: float = 0.0
+    category_score: float = 0.0
+    color_score: float = 0.0
+    style_score: float = 0.0
+    pattern_score: float = 0.0
+    budget_score: float = 0.0
+    preference_score: float = 0.0
+    overall_score: float = 0.0
+    reasons: list[str] = []
+
 
 
 class ShoppingDestinationResponse(BaseModel):
@@ -96,6 +97,19 @@ class SearchHistoryItem(BaseModel):
     confidence: float
     result_count: int
     created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class SearchHistoryDetailResponse(ImageSearchResponse):
+    id: int
+    detected_category: str | None = None
+    detected_style: str | None = None
+    detected_color: str | None = None
+    confidence: float = 0.0
+    result_count: int = 0
+    created_at: datetime | None = None
 
     class Config:
         from_attributes = True

@@ -79,3 +79,52 @@ def test_best_value_ranking_never_just_picks_cheapest():
     # automatically lose to a much cheaper but poorly-matching item.
     assert ranked[0].product.id in (1, 2)  # sanity: ranking runs without error
     assert isinstance(ranked[0].overall_score, float)
+
+
+def test_missing_or_null_category_does_not_cause_exception():
+    """Verify that products or detected items with None category are safely handled without AttributeError."""
+    query_embedding = np.ones(32) / np.linalg.norm(np.ones(32))
+    product_null_cat = _fake_product(id=1, category=None, color="Black", style="Casual")
+    product_valid_cat = _fake_product(id=2, category="Dress", color="Black", style="Casual")
+
+    # 1. score_product with None product.category and None detected_category
+    scored_null = score_product(
+        product_null_cat,
+        query_embedding,
+        detected_category=None,
+        detected_color="Black",
+        detected_style="Casual",
+        detected_pattern="Solid",
+        budget_min=0,
+        budget_max=5000,
+        preferred_styles=[],
+        preferred_colors=[],
+    )
+    assert scored_null.category_score >= 0.0
+
+    scored_valid = score_product(
+        product_valid_cat,
+        query_embedding,
+        detected_category="Dress",
+        detected_color="Black",
+        detected_style="Casual",
+        detected_pattern="Solid",
+        budget_min=0,
+        budget_max=5000,
+        preferred_styles=[],
+        preferred_colors=[],
+    )
+
+    # 2. similar_style filtering with None product.category
+    target_category = ("Dress" or "").strip().lower()
+    similar_pool = [
+        s for s in [scored_null, scored_valid]
+        if target_category and (s.product.category or "").strip().lower() == target_category
+    ]
+    ranked = rank_products(similar_pool or [scored_null, scored_valid], "similar_style")
+    assert len(ranked) == 1
+    assert ranked[0].product.id == 2
+    assert ranked[0].product.category == "Dress"
+
+
+
